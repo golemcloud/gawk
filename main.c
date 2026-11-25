@@ -1708,6 +1708,9 @@ parse_args(int argc, char **argv)
 			break;
 
 		case 'M':
+#ifdef __wasi__
+			fatal(_("-M/--bignum: arbitrary precision arithmetic is not supported in this build"));
+#endif
 #ifdef HAVE_MPFR
 			do_flags |= DO_MPFR;
 #else
@@ -1734,6 +1737,9 @@ parse_args(int argc, char **argv)
 			break;
 
 		case 'T':	// --persist[=file]
+#ifdef __wasi__
+			fatal(_("--persist: persistent memory is not supported in this build"));
+#endif
 #ifdef USE_PERSISTENT_MALLOC
 			if (optarg == NULL)
 				optarg = "/some/file";
