@@ -1611,6 +1611,9 @@ parse_args(int argc, char **argv)
 			break;
 
 		case 'D':
+#ifdef __wasi__
+			fatal(_("-D/--debug: the debugger is not supported in this build"));
+#endif
 			do_flags |= DO_DEBUG;
 			if (optarg != NULL && optarg[0] != '\0')
 				command_file = optarg;

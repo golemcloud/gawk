@@ -4702,7 +4702,7 @@ save_pipe(int fd, FILE *fp, pid_t pid)
 static FILE *
 gawk_popen_write(const char *cmd)
 {
-#if defined(VMS) || defined(__MINGW32__)
+#if defined(VMS) || defined(__MINGW32__) || defined(__wasi__)
 	return popen(cmd, binmode("w"));
 #else
 	pid_t childpid;
@@ -4763,7 +4763,7 @@ gawk_popen_write(const char *cmd)
 static int
 gawk_popen_write_close(FILE *fp)
 {
-#if defined(VMS) || defined(__MINGW32__)
+#if defined(VMS) || defined(__MINGW32__) || defined(__wasi__)
 	return pclose(fp);
 #else
 	write_pipe *wp;
