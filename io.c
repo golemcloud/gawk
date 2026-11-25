@@ -1839,6 +1839,18 @@ done:
 	return openfd;
 }
 
+#ifdef __wasi__
+/* refused_inet_name --- true for a /inet special file name; this build has no network access */
+
+static bool
+refused_inet_name(const char *name)
+{
+	return strncmp(name, "/inet/", 6) == 0
+		|| strncmp(name, "/inet4/", 7) == 0
+		|| strncmp(name, "/inet6/", 7) == 0;
+}
+#endif
+
 /* devopen --- handle /dev/std{in,out,err}, /dev/fd/N, /inet, regular files */
 
 /*
@@ -1862,6 +1874,11 @@ devopen(const char *name, const char *mode)
 
 	if (do_traditional) {
 		goto strictopen;
+#ifdef __wasi__
+	} else if (refused_inet_name(name)) {
+		errno = EAFNOSUPPORT;
+		return INVALID_HANDLE;
+#endif
 	} else if (inetfile(name, strlen(name), & isi)) {
 #ifdef HAVE_SOCKETS
 #define DEFAULT_RETRIES 20
@@ -2529,6 +2546,11 @@ use_pipes:
 	/* case 4: two way pipe to a command started as a Golem tool call */
     {
 	int rfd, wfd;
+
+	if (refused_inet_name(str)) {
+		errno = EAFNOSUPPORT;
+		return false;
+	}
 
 	if (golem_gawk_coprocess(str, & rfd, & wfd) != 0)
 		return false;
