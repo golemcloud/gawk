@@ -2525,6 +2525,31 @@ use_pipes:
 	return true;
     }
 
+#elif defined(__wasi__)
+	/* case 4: two way pipe to a command started as a Golem tool call */
+    {
+	int rfd, wfd;
+
+	if (golem_gawk_coprocess(str, & rfd, & wfd) != 0)
+		return false;
+	rp->pid = -1;
+	rp->iop = iop_alloc(rfd, str, 0);
+	find_input_parser(rp->iop);
+	iop_finish(rp->iop);
+	rp->ifp = fdopen(rfd, binmode("r"));
+	rp->output.fp = fdopen(wfd, binmode("w"));
+	if (! rp->iop->valid || rp->ifp == NULL || rp->output.fp == NULL) {
+		if (rp->iop->valid && rp->iop->errcode != 0)
+			update_ERRNO_int(rp->iop->errcode);
+		iop_close(rp->iop);
+		rp->iop = NULL;
+		return false;
+	}
+	rp->output.mode = "w";
+	rp->output.name = str;
+	find_output_wrapper(& rp->output);
+	return true;
+    }
 #else	/*PIPES_SIMULATED*/
 
 	fatal(_("`|&' not supported"));
@@ -2824,6 +2849,11 @@ gawk_pclose(struct redirect *rp)
 	rp->iop = NULL;
 	aval = pclose(rp->ifp);
 	rp->ifp = NULL;
+#ifdef __wasi__
+	/* the callers expect a sanitized status, as from the real-pipe version */
+	if (aval >= 0)
+		aval = sanitize_exit_status(aval);
+#endif
 	return (rval < 0 ? rval : aval);
 }
 
