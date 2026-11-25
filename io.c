@@ -1839,6 +1839,18 @@ done:
 	return openfd;
 }
 
+#ifdef __wasi__
+/* refused_inet_name --- true for a /inet special file name; this build has no network access */
+
+static bool
+refused_inet_name(const char *name)
+{
+	return strncmp(name, "/inet/", 6) == 0
+		|| strncmp(name, "/inet4/", 7) == 0
+		|| strncmp(name, "/inet6/", 7) == 0;
+}
+#endif
+
 /* devopen --- handle /dev/std{in,out,err}, /dev/fd/N, /inet, regular files */
 
 /*
@@ -1862,6 +1874,11 @@ devopen(const char *name, const char *mode)
 
 	if (do_traditional) {
 		goto strictopen;
+#ifdef __wasi__
+	} else if (refused_inet_name(name)) {
+		errno = EAFNOSUPPORT;
+		return INVALID_HANDLE;
+#endif
 	} else if (inetfile(name, strlen(name), & isi)) {
 #ifdef HAVE_SOCKETS
 #define DEFAULT_RETRIES 20
@@ -2525,6 +2542,36 @@ use_pipes:
 	return true;
     }
 
+#elif defined(__wasi__)
+	/* case 4: two way pipe to a command started as a Golem tool call */
+    {
+	int rfd, wfd;
+
+	if (refused_inet_name(str)) {
+		errno = EAFNOSUPPORT;
+		return false;
+	}
+
+	if (golem_gawk_coprocess(str, & rfd, & wfd) != 0)
+		return false;
+	rp->pid = -1;
+	rp->iop = iop_alloc(rfd, str, 0);
+	find_input_parser(rp->iop);
+	iop_finish(rp->iop);
+	rp->ifp = fdopen(rfd, binmode("r"));
+	rp->output.fp = fdopen(wfd, binmode("w"));
+	if (! rp->iop->valid || rp->ifp == NULL || rp->output.fp == NULL) {
+		if (rp->iop->valid && rp->iop->errcode != 0)
+			update_ERRNO_int(rp->iop->errcode);
+		iop_close(rp->iop);
+		rp->iop = NULL;
+		return false;
+	}
+	rp->output.mode = "w";
+	rp->output.name = str;
+	find_output_wrapper(& rp->output);
+	return true;
+    }
 #else	/*PIPES_SIMULATED*/
 
 	fatal(_("`|&' not supported"));
@@ -2815,7 +2862,16 @@ gawk_popen(const char *cmd, struct redirect *rp)
 static int
 gawk_pclose(struct redirect *rp)
 {
+#ifdef __wasi__
+	int rval = 0, aval, fd;
+
+	/* the read end of a two-way pipe can be closed before close(cmd) closes the rest */
+	if (rp->iop == NULL && rp->ifp == NULL)
+		return rp->status;
+	fd = rp->iop != NULL ? rp->iop->public.fd : INVALID_HANDLE;
+#else
 	int rval, aval, fd = rp->iop->public.fd;
+#endif
 
 	if (rp->iop != NULL) {
 		rp->iop->public.fd = dup(fd);	  /* kludge to allow close() + pclose() */
@@ -2824,6 +2880,12 @@ gawk_pclose(struct redirect *rp)
 	rp->iop = NULL;
 	aval = pclose(rp->ifp);
 	rp->ifp = NULL;
+#ifdef __wasi__
+	/* the callers expect a sanitized status, as from the real-pipe version */
+	if (aval >= 0)
+		aval = sanitize_exit_status(aval);
+	rp->status = (rval < 0 ? rval : aval);
+#endif
 	return (rval < 0 ? rval : aval);
 }
 
@@ -4702,7 +4764,7 @@ save_pipe(int fd, FILE *fp, pid_t pid)
 static FILE *
 gawk_popen_write(const char *cmd)
 {
-#if defined(VMS) || defined(__MINGW32__)
+#if defined(VMS) || defined(__MINGW32__) || defined(__wasi__)
 	return popen(cmd, binmode("w"));
 #else
 	pid_t childpid;
@@ -4763,7 +4825,7 @@ gawk_popen_write(const char *cmd)
 static int
 gawk_popen_write_close(FILE *fp)
 {
-#if defined(VMS) || defined(__MINGW32__)
+#if defined(VMS) || defined(__MINGW32__) || defined(__wasi__)
 	return pclose(fp);
 #else
 	write_pipe *wp;

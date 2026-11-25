@@ -3381,7 +3381,7 @@ do_mkbool(int nargs)
 int
 gawk_system(const char *command)
 {
-#if defined(VMS) || defined(__MINGW32__)
+#if defined(VMS) || defined(__MINGW32__) || defined(__wasi__)
 	return system(command);
 #else /* ! (defined(VMS) || defined(__MINGW32__)) */
 	pid_t childpid;

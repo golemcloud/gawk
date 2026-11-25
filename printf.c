@@ -925,9 +925,11 @@ format_integer_digits(NODE *arg, struct flags *flags, bool *used_float)
 		// octal or hex or unsigned decimal
 		chbuf = (flags->format == 'X' ? Uchbuf : lchbuf);
 
+		/* Converting an out-of-range double is undefined, so check the range first. */
 		if (tmpval < 0) {
-			uval = (uintmax_t) (intmax_t) tmpval;
-			if ((AWKNUM)(intmax_t)uval != double_to_int(tmpval)) {
+			if (tmpval < -0x1p63
+			    || (uval = (uintmax_t) (intmax_t) tmpval,
+				(AWKNUM)(intmax_t)uval != double_to_int(tmpval))) {
 				flags->format = 'g';
 				free((void *) buf);
 				*used_float = true;
@@ -935,8 +937,9 @@ format_integer_digits(NODE *arg, struct flags *flags, bool *used_float)
 				return format_float(arg, flags);
 			}
 		} else {
-			uval = (uintmax_t) tmpval;
-			if ((AWKNUM)uval != double_to_int(tmpval)) {
+			if (tmpval >= 0x1p64
+			    || (uval = (uintmax_t) tmpval,
+				(AWKNUM)uval != double_to_int(tmpval))) {
 				flags->format = 'g';
 				free((void *) buf);
 				*used_float = true;
