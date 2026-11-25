@@ -2862,7 +2862,16 @@ gawk_popen(const char *cmd, struct redirect *rp)
 static int
 gawk_pclose(struct redirect *rp)
 {
+#ifdef __wasi__
+	int rval = 0, aval, fd;
+
+	/* the read end of a two-way pipe can be closed before close(cmd) closes the rest */
+	if (rp->iop == NULL && rp->ifp == NULL)
+		return rp->status;
+	fd = rp->iop != NULL ? rp->iop->public.fd : INVALID_HANDLE;
+#else
 	int rval, aval, fd = rp->iop->public.fd;
+#endif
 
 	if (rp->iop != NULL) {
 		rp->iop->public.fd = dup(fd);	  /* kludge to allow close() + pclose() */
@@ -2875,6 +2884,7 @@ gawk_pclose(struct redirect *rp)
 	/* the callers expect a sanitized status, as from the real-pipe version */
 	if (aval >= 0)
 		aval = sanitize_exit_status(aval);
+	rp->status = (rval < 0 ? rval : aval);
 #endif
 	return (rval < 0 ? rval : aval);
 }
